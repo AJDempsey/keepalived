@@ -271,7 +271,7 @@ netlink_link_add_vmac(vrrp_t *vrrp)
 			  MACVLAN_MODE_PRIVATE);
 		data->rta_len = (unsigned short)((char *)NLMSG_TAIL(&req.n) - (char *)data);
 		linkinfo->rta_len = (unsigned short)((char *)NLMSG_TAIL(&req.n) - (char *)linkinfo);
-		addattr32(&req.n, sizeof(req), IFLA_LINK, vrrp->configured_ifp->base_ifp->ifindex);
+		addattr32(&req.n, sizeof(req), IFLA_LINK, vrrp->configured_ifp->ifindex);
 		addattr_l(&req.n, sizeof(req), IFLA_IFNAME, vrrp->vmac_ifname, strlen(vrrp->vmac_ifname));
 		addattr_l(&req.n, sizeof(req), IFLA_ADDRESS, ll_addr, ETH_ALEN);
 
@@ -297,6 +297,14 @@ netlink_link_add_vmac(vrrp_t *vrrp)
 		netlink_interface_lookup(vrrp->vmac_ifname);
 		if (!ifp->ifindex)
 			return false;
+
+		if (!ifp->base_ifp &&
+		    vrrp->configured_ifp->vmac_type &&
+		    vrrp->configured_ifp == vrrp->configured_ifp->base_ifp) {
+			/* If the base interface is a MACVLAN that has been moved into a
+			 * different network namespace from its parent, we can't find the parent */
+			ifp->base_ifp = ifp;
+		}
 
 		/* If we do anything that might cause the interface state to change, we must
 		 * read the reflected netlink messages to ensure that the link status doesn't

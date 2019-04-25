@@ -68,6 +68,8 @@ typedef struct _notify_script {
 typedef struct _notify_fifo {
 	char	*name;
 	int	fd;
+	uid_t	uid;		/* uid of user of fifo if create */
+	gid_t	gid;		/* gid of group of fifo */
 	bool	created_fifo;	/* We created the FIFO */
 	notify_script_t *script; /* Script to run to process FIFO */
 } notify_fifo_t;
@@ -106,7 +108,7 @@ extern void set_script_params_array(vector_t *, notify_script_t *, unsigned);
 extern notify_script_t* notify_script_init(int, const char *);
 extern void add_script_param(notify_script_t *, char *);
 extern void notify_resource_release(void);
-extern bool notify_script_compare(notify_script_t *, notify_script_t *) __attribute__ ((pure));
+extern bool notify_script_compare(const notify_script_t *, const notify_script_t *) __attribute__ ((pure));
 #ifdef THREAD_DUMP
 extern void register_notify_addresses(void);
 #endif

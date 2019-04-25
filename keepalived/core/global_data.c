@@ -189,7 +189,7 @@ alloc_global_data(void)
 #endif
 
 #ifdef _WITH_SNMP_
-	if (snmp) {
+	if (snmp_option) {
 #ifdef _WITH_SNMP_VRRP_
 		new->enable_snmp_vrrp = true;
 #endif
@@ -326,6 +326,16 @@ free_global_data(data_t * data)
 	FREE_PTR(data->network_namespace);
 #endif
 	FREE_PTR(data->instance_name);
+	FREE_PTR(data->process_name);
+#ifdef _WITH_VRRP_
+	FREE_PTR(data->vrrp_process_name);
+#endif
+#ifdef _WITH_LVS_
+	FREE_PTR(data->lvs_process_name);
+#endif
+#ifdef _WITH_BFD_
+	FREE_PTR(data->bfd_process_name);
+#endif
 	FREE_PTR(data->router_id);
 	FREE_PTR(data->email_from);
 	FREE_PTR(data->smtp_helo_name);
@@ -371,6 +381,20 @@ dump_global_data(FILE *fp, data_t * data)
 #endif
 	if (data->instance_name)
 		conf_write(fp, " Instance name = %s", data->instance_name);
+	if (data->process_name)
+		conf_write(fp, " Parent process name = %s", data->process_name);
+#ifdef _WITH_VRRP_
+	if (data->vrrp_process_name)
+		conf_write(fp, " VRRP process name = %s", data->vrrp_process_name);
+#endif
+#ifdef _WITH_LVS_
+	if (data->lvs_process_name)
+		conf_write(fp, " LVS process name = %s", data->lvs_process_name);
+#endif
+#ifdef _WITH_BFD_
+	if (data->bfd_process_name)
+		conf_write(fp, " BFD process name = %s", data->bfd_process_name);
+#endif
 	if (data->router_id)
 		conf_write(fp, " Router ID = %s", data->router_id);
 	if (data->smtp_server.ss_family) {
@@ -442,7 +466,7 @@ dump_global_data(FILE *fp, data_t * data)
 						  data->lvs_flush_onstop == LVS_FLUSH_VS ? "VS" : "disabled");
 #endif
 	if (data->notify_fifo.name) {
-		conf_write(fp, " Global notify fifo = %s", data->notify_fifo.name);
+		conf_write(fp, " Global notify fifo = %s, uid:gid %d:%d", data->notify_fifo.name, data->notify_fifo.uid, data->notify_fifo.gid);
 		if (data->notify_fifo.script)
 			conf_write(fp, " Global notify fifo script = %s, uid:gid %d:%d",
 				    cmd_str(data->notify_fifo.script),
@@ -451,7 +475,7 @@ dump_global_data(FILE *fp, data_t * data)
 	}
 #ifdef _WITH_VRRP_
 	if (data->vrrp_notify_fifo.name) {
-		conf_write(fp, " VRRP notify fifo = %s", data->vrrp_notify_fifo.name);
+		conf_write(fp, " VRRP notify fifo = %s, uid:gid %d:%d", data->vrrp_notify_fifo.name, data->vrrp_notify_fifo.uid, data->vrrp_notify_fifo.gid);
 		if (data->vrrp_notify_fifo.script)
 			conf_write(fp, " VRRP notify fifo script = %s, uid:gid %d:%d",
 				    cmd_str(data->vrrp_notify_fifo.script),
@@ -461,7 +485,7 @@ dump_global_data(FILE *fp, data_t * data)
 #endif
 #ifdef _WITH_LVS_
 	if (data->lvs_notify_fifo.name) {
-		conf_write(fp, " LVS notify fifo = %s", data->lvs_notify_fifo.name);
+		conf_write(fp, " LVS notify fifo = %s, uid:gid %d:%d", data->lvs_notify_fifo.name, data->lvs_notify_fifo.uid, data->lvs_notify_fifo.gid);
 		if (data->lvs_notify_fifo.script)
 			conf_write(fp, " LVS notify fifo script = %s, uid:gid %d:%d",
 				    cmd_str(data->lvs_notify_fifo.script),
@@ -470,6 +494,7 @@ dump_global_data(FILE *fp, data_t * data)
 	}
 #endif
 #ifdef _WITH_VRRP_
+	conf_write(fp, " VRRP notify priority changes = %s", data->vrrp_notify_priority_changes ? "true" : "false");
 	if (data->vrrp_mcast_group4.sin_family) {
 		conf_write(fp, " VRRP IPv4 mcast group = %s"
 				    , inet_sockaddrtos((struct sockaddr_storage *)&data->vrrp_mcast_group4));
@@ -604,5 +629,7 @@ dump_global_data(FILE *fp, data_t * data)
 	conf_write(fp, " umask = 0%o", umask_val);
 	if (global_data->vrrp_startup_delay)
 		conf_write(fp, " vrrp_startup_delay = %g", (float)global_data->vrrp_startup_delay / TIMER_HZ);
+	if (global_data->log_unknown_vrids)
+		conf_write(fp, " log_unknown_vrids");
 #endif
 }

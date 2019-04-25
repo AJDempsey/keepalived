@@ -155,6 +155,16 @@ and
 
 # Global definitions configuration block
 \fBglobal_defs \fR{
+    # Set the process names of the keepalived processes to the default values:
+    #   keepalived, keepalived_vrrp, keepalived_ipvs, keepalived_bfd
+    \fBprocess_names\fR
+
+    # Specify the individual process names
+    \fBprocess_name\fR NAME
+    \fBvrrp_process_name\fR NAME
+    \fBipvs_process_name\fR NAME
+    \fBbfd_process_name\fR NAME
+
     # Set of email To: notify
     \fBnotification_email \fR{
         admin@example1.com
@@ -353,6 +363,9 @@ and
     #   IPv6 addresses in VRRP version 2
     \fBvrrp_strict\fR
 
+    # Send vrrp instance priority notifications on notify FIFOs.
+    \fBvrrp_notify_priority_changes\fR <BOOL>
+
     # The following options can be used if vrrp or checker processes
     # are timing out. This can be seen by a backup vrrp instance becoming
     # master even when the master is still running because the master or
@@ -451,9 +464,9 @@ and
     # --
     # FIFO to write notify events to
     # See vrrp_notify_fifo and lvs_notify_fifo for format of output
-    # For further details, see the description under vrrp_sync_group see
-    # doc/samples/sample_notify_fifo.sh for sample usage.
-    \fBnotify_fifo \fRFIFO_NAME
+    # For further details, see the description under vrrp_sync_group.
+    # see doc/samples/sample_notify_fifo.sh for sample usage.
+    \fBnotify_fifo \fRFIFO_NAME [username [groupname]]
 
     # script to be run by keepalived to process notify events
     # The FIFO name will be passed to the script as the last parameter
@@ -464,7 +477,7 @@ and
     # and will be terminated with a new line character.
     # For further details of the output, see the description under vrrp_sync_group
     # and doc/samples/sample_notify_fifo.sh for sample usage.
-    \fBvrrp_notify_fifo \fRFIFO_NAME
+    \fBvrrp_notify_fifo \fRFIFO_NAME [username [groupname]]
 
     # script to be run by keepalived to process vrrp notify events
     # The FIFO name will be passed to the script as the last parameter
@@ -475,7 +488,7 @@ and
     # VS [192.168.201.15]:tcp:80 {UP|DOWN}
     # RS [1.2.3.4]:tcp:80 [192.168.201.15]:tcp:80 {UP|DOWN}
     # and will be terminated with a new line character.
-    \fBlvs_notify_fifo \fRFIFO_NAME
+    \fBlvs_notify_fifo \fRFIFO_NAME [username [groupname]]
 
     # script to be run by keepalived to process healthchecher notify events
     # The FIFO name will be passed to the script as the last parameter
@@ -559,6 +572,10 @@ and
     # This option specifies a delay in seconds before vrrp instances start up after
     # keepalived starts,
     \fBvrrp_startup_delay \fR5.5
+
+    # The following will cause logging of receipt of VRRP adverts for VRIDs not configured
+    # on the interface on which they are received.
+    \fBlog_unknown_vrids\fR
 
     # Specify random seed for ${_RANDOM}, to make configurations repeatable (default
     # is to use a seed based on the time, so that each time a different configuration
@@ -693,8 +710,15 @@ To force a route/rule to be IPv6, add the keyword "inet6".
 The configuration block looks like:
 
     \fBvrrp_track_process\fR <STRING> {
-        # process to monitor
-        \fBprocess\fR <QUOTED_STRING>
+        # process to monitor (with optional parameters)
+        \fBprocess\fR <STRING>|<QUOTED_STRING> [<STRING>|<QUOTED_STRING> ...]
+
+        # If matching parameters, specifies a partial match (i.e. the first
+        #   n parameters match exactly, or an initial match, i.e. the last
+        #   parameter may be longer that the parameter configured.
+        # To specify that a command must have no parameters, don't specify
+        #   any parameters, but specify param_match.
+        param_match {initial|partial}
 
         # default weight (default is 1)
         \fBweight\fR <-254..254>
@@ -702,13 +726,30 @@ The configuration block looks like:
         # minimum number of processes for success
         \fBquorum\fR NUM
 
+        # maximum number of processes for success. For example, setting
+        #   this to 1 would cause a failure if two instances of the process
+        #   were running (but beware forks - see fork_delay below).
+        #   Setting this to 0 would mean failure if the matching process were
+        #   running at all.
+        \fBquorum_max\fR NUM
+
+        # time to delay after process quorum gained after fork before
+        #   consider process up (in fractions of second)
+        #   This is to avoid up/down bounce for fork/exec
+        \fBfork_delay\fR SECS
+
         # time to delay after process quorum lost before
-        #   consider process failed (in fractions of second)
+        #   consider process down (in fractions of second)
+        #   This is to avoid down/up bounce after terminate/parent refork.
+        \fBterminate_delay\fR SECS
+
+        # this sets fork_delay and terminate_delay
         \fBdelay\fR SECS
 
         # Normally process string is matched against the process name,
-        #   as shown on the Name: line in /proc/PID/status.
-        #   This option matches the full command line
+        #   as shown on the Name: line in /proc/PID/status, unless
+        #   parameters are specified.
+        #   This option forces matching the full command line
         \fBfull_command\fR
    }
 .fi
@@ -1039,11 +1080,16 @@ The syntax for vrrp_sync_group is :
 
     # The notify fifo output is the same as the last 4 parameters for the "notify"
     # script, with the addition of "MASTER_RX_LOWER_PRI" instead of state for an
-    # instance. This is used if a master needs to set some external state, such as
-    # setting a secondary IP address when using Amazon AWS; if another keepalived
+    # instance, and also "MASTER_PRIORITY" and "BACKUP_PRIORITY" if the priority
+    # changes and notify_priority_changes is configured.
+    # MASTER_RX_LOWER_PRI is used if a master needs to set some external state, such
+    # as setting a secondary IP address when using Amazon AWS; if another keepalived
     # has transitioned to master due to a communications break, the lower priority
     # instance will have taken over the secondary IP address, and the proper master
     # needs to be able to restore it.
+
+    # Send FIFO notifies for vrrp priority changes
+    \fBnotify_priority_changes\fR <BOOL>
 
     # Send email notification during state transition,
     # using addresses in global_defs above (default no,
@@ -1219,7 +1265,7 @@ The syntax for garp_group is :
     #  Setting this flag forces the old checksum algorithm to be used
     #  to maintain backward compatibility, although keepalived will
     #  attempt to maintain compatibility anyway if it sees an old
-    #  version checksum. Sepcifying never will turn off auto detection
+    #  version checksum. Specifying never will turn off auto detection
     #  of old checksums. [This option may not be enabled - check output
     #  of `keepalived -v` for OLD_CHKSUM_COMPAT.]
     \fBold_unicast_checksum \fR[never]
@@ -1326,7 +1372,7 @@ The syntax for garp_group is :
     # For example if 10.1.1.2/24 and 10.1.1.3/24 are both configured on an
     # interface, and one is removed, unless promote_secondaries is set on
     # the interface the other address will also be removed.
-    prompte_secondaries
+    \fBpromote_secondaries \fR
 
     # routes add|del when changing to MASTER, to BACKUP.
     # See static_routes for more details
@@ -1403,6 +1449,9 @@ The syntax for garp_group is :
     # The notify_master_rx_lower_pri script is executed if a master
     #  receives an advert with priority lower than the master's advert.
     \fBnotify_master_rx_lower_pri \fR<STRING>|<QUOTED-STRING> [username [groupname]]
+
+    # Send vrrp instance priority notifications on notify FIFOs.
+    \fBnotify_priority_changes\fR <BOOL>
 
     # Send SMTP alerts
     \fBsmtp_alert \fR<BOOL>

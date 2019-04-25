@@ -59,7 +59,7 @@
 #include "memory.h"
 #include "bitops.h"
 #include "rttables.h"
-#if defined _WITH_SNMP_RFC || defined _WITH_SNMP_VRRP_
+#if defined _WITH_SNMP_RFC_ || defined _WITH_SNMP_VRRP_
   #include "vrrp_snmp.h"
 #endif
 #ifdef _WITH_DBUS_
@@ -227,9 +227,9 @@ vrrp_terminate_phase2(int exit_status)
 		report_and_clear_netlink_timers("Completed shutdown instances");
 #endif
 
-#if defined _WITH_SNMP_RFC || defined _WITH_SNMP_VRRP_
+#if defined _WITH_SNMP_RFC_ || defined _WITH_SNMP_VRRP_
 	if (
-#ifdef _WITH_SNMP_RFC_
+#ifdef _WITH_SNMP_VRRP_
 	    global_data->enable_snmp_vrrp ||
 #endif
 #ifdef _WITH_SNMP_RFCV2_
@@ -238,7 +238,7 @@ vrrp_terminate_phase2(int exit_status)
 #ifdef _WITH_SNMP_RFCV3_
 	    global_data->enable_snmp_rfcv3 ||
 #endif
-	    false)
+	    snmp_option)
 		vrrp_snmp_agent_close();
 #endif
 
@@ -475,6 +475,13 @@ start_vrrp(data_t *prev_global_data)
 
 	init_data(conf_file, vrrp_init_keywords);
 
+	/* Update process name if necessary */
+	if ((!reload && global_data->vrrp_process_name) ||
+	    (reload &&
+	     (!global_data->vrrp_process_name != !prev_global_data->vrrp_process_name ||
+	      (global_data->vrrp_process_name && strcmp(global_data->vrrp_process_name, prev_global_data->vrrp_process_name)))))
+		set_process_name(global_data->vrrp_process_name);
+
 	if (non_existent_interface_specified) {
 		report_config_error(CONFIG_BAD_IF, "Non-existent interface specified in configuration");
 		stop_vrrp(KEEPALIVED_EXIT_CONFIG);
@@ -488,7 +495,7 @@ start_vrrp(data_t *prev_global_data)
 	set_time_now();
 
 	if (!__test_bit(CONFIG_TEST_BIT, &debug)) {
-#if defined _WITH_SNMP_RFC || defined _WITH_SNMP_VRRP_
+#if defined _WITH_SNMP_RFC_ || defined _WITH_SNMP_VRRP_
 		if (!reload && (
 #ifdef _WITH_SNMP_VRRP_
 		     global_data->enable_snmp_vrrp ||
@@ -499,7 +506,7 @@ start_vrrp(data_t *prev_global_data)
 #ifdef _WITH_SNMP_RFCV3_
 		     global_data->enable_snmp_rfcv3 ||
 #endif
-		     false)) {
+		     snmp_option)) {
 			vrrp_snmp_agent_init(global_data->snmp_socket);
 #ifdef _WITH_SNMP_RFC_
 			vrrp_start_time = time_now;
@@ -762,7 +769,7 @@ reload_vrrp_thread(__attribute__((unused)) thread_t * thread)
 
 	vrrp_initialised = false;
 
-#if !defined _DEBUG_ && defined _WITH_VRRP_SNMP_
+#if !defined _DEBUG_ && defined _WITH_SNMP_VRRP_
 	if (
 #ifdef _WITH_SNMP_VRRP_
 	    global_data->enable_snmp_vrrp ||
@@ -773,7 +780,7 @@ reload_vrrp_thread(__attribute__((unused)) thread_t * thread)
 #ifdef _WITH_SNMP_RFCV3_
 	    global_data->enable_snmp_rfcv3 ||
 #endif
-	    false)
+	    snmp_option)
 		with_snmp = true;
 #endif
 

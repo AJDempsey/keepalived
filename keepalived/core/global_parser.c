@@ -58,6 +58,12 @@
 #include "namespaces.h"
 #endif
 
+/* Defined in kernel source file include/linux/sched.h but
+ * not currently exposed to userspace */
+#ifndef TASK_COMM_LEN
+#define TASK_COMM_LEN	16
+#endif
+
 #define LVS_MAX_TIMEOUT		(86400*31)	/* 31 days */
 
 /* data handlers */
@@ -70,6 +76,64 @@ use_polling_handler(vector_t *strvec)
 		return;
 
 	global_data->linkbeat_use_polling = true;
+}
+#endif
+static void
+save_process_name(char **dest, char *src)
+{
+	size_t len;
+
+	if (!src) {
+		report_config_error(CONFIG_GENERAL_ERROR, "Process name missing");
+		return;
+	}
+
+	if (*dest)
+		FREE_PTR(*dest);
+
+	if ((len = strlen(src)) >= TASK_COMM_LEN)
+		report_config_error(CONFIG_GENERAL_ERROR, "Process name %s more than %d characters, truncating", src, TASK_COMM_LEN - 1);
+
+	*dest = MALLOC(len + 1);
+	strncpy(*dest, src, len >= TASK_COMM_LEN ? TASK_COMM_LEN - 1 : len);
+}
+static void
+process_names_handler(__attribute__((unused)) vector_t *strvec)
+{
+#ifdef _WITH_VRRP_
+	save_process_name(&global_data->vrrp_process_name, "keepalived_vrrp");
+#endif
+#ifdef _WITH_LVS_
+	save_process_name(&global_data->lvs_process_name, "keepalived_lvs");
+#endif
+#ifdef _WITH_BFD_
+	save_process_name(&global_data->bfd_process_name, "keepalived_bfd");
+#endif
+}
+static void
+process_name_handler(vector_t *strvec)
+{
+	save_process_name(&global_data->process_name, strvec_slot(strvec, 1));
+}
+#ifdef _WITH_VRRP_
+static void
+vrrp_process_name_handler(vector_t *strvec)
+{
+	save_process_name(&global_data->vrrp_process_name, strvec_slot(strvec, 1));
+}
+#endif
+#ifdef _WITH_LVS_
+static void
+lvs_process_name_handler(vector_t *strvec)
+{
+	save_process_name(&global_data->lvs_process_name, strvec_slot(strvec, 1));
+}
+#endif
+#ifdef _WITH_BFD_
+static void
+bfd_process_name_handler(vector_t *strvec)
+{
+	save_process_name(&global_data->bfd_process_name, strvec_slot(strvec, 1));
 }
 #endif
 static void
@@ -909,6 +973,22 @@ notify_fifo(vector_t *strvec, const char *type, notify_fifo_t *fifo)
 		return;
 	}
 
+	if (vector_size(strvec) > 2) {
+		if (set_script_uid_gid(strvec, 2, &fifo->uid, &fifo->gid)) {
+			log_message(LOG_INFO, "Invalid user/group for %s fifo %s - ignoring", type, fifo->name);
+			return;
+		}
+	}
+	else {
+		if (set_default_script_user(NULL, NULL)) {
+			log_message(LOG_INFO, "Failed to set default user for %s fifo %s - ignoring", type, fifo->name);
+			return;
+		}
+
+		fifo->uid = default_script_uid;
+		fifo->gid = default_script_gid;
+	}
+
 	fifo->name = MALLOC(strlen(strvec_slot(strvec, 1)) + 1);
 	strcpy(fifo->name, strvec_slot(strvec, 1));
 }
@@ -954,6 +1034,21 @@ static void
 vrrp_notify_fifo_script(vector_t *strvec)
 {
 	notify_fifo_script(strvec, "vrrp_", &global_data->vrrp_notify_fifo);
+}
+static void
+vrrp_notify_priority_changes(vector_t *strvec)
+{
+	int res = true;
+
+	if (vector_size(strvec) >= 2) {
+		res = check_true_false(strvec_slot(strvec,1));
+		if (res < 0) {
+			report_config_error(CONFIG_GENERAL_ERROR, "Invalid value '%s' for global vrrp_notify_priority_changes specified", FMT_STR_VSLOT(strvec, 1));
+			return;
+		}
+	}
+
+	global_data->vrrp_notify_priority_changes = res;
 }
 #endif
 #ifdef _WITH_LVS_
@@ -1581,6 +1676,12 @@ vrrp_startup_delay_handler(vector_t *strvec)
 	if (global_data->vrrp_startup_delay >= 60 * TIMER_HZ)
 		log_message(LOG_INFO, "The vrrp_startup_delay is very large - %s seconds", FMT_STR_VSLOT(strvec, 1));
 }
+
+static void
+vrrp_log_unknown_vrids_handler(__attribute__((unused)) vector_t *strvec)
+{
+	global_data->log_unknown_vrids = true;
+}
 #endif
 
 static void
@@ -1611,6 +1712,17 @@ init_global_keywords(bool global_active)
 	install_keyword_root("instance", &instance_handler, global_active);
 	install_keyword_root("child_wait_time", &child_wait_handler, global_active);
 	install_keyword_root("global_defs", NULL, global_active);
+	install_keyword("process_names", &process_names_handler);
+	install_keyword("process_name", &process_name_handler);
+#ifdef _WITH_VRRP_
+	install_keyword("vrrp_process_name", &vrrp_process_name_handler);
+#endif
+#ifdef _WITH_LVS_
+	install_keyword("lvs_process_name", &lvs_process_name_handler);
+#endif
+#ifdef _WITH_BFD_
+	install_keyword("bfd_process_name", &bfd_process_name_handler);
+#endif
 	install_keyword("router_id", &routerid_handler);
 	install_keyword("notification_email_from", &emailfrom_handler);
 	install_keyword("smtp_server", &smtpserver_handler);
@@ -1682,6 +1794,7 @@ init_global_keywords(bool global_active)
 #ifdef _WITH_VRRP_
 	install_keyword("vrrp_notify_fifo", &vrrp_notify_fifo);
 	install_keyword("vrrp_notify_fifo_script", &vrrp_notify_fifo_script);
+	install_keyword("vrrp_notify_priority_changes", &vrrp_notify_priority_changes);
 #endif
 #ifdef _WITH_LVS_
 	install_keyword("lvs_notify_fifo", &lvs_notify_fifo);
@@ -1755,6 +1868,7 @@ init_global_keywords(bool global_active)
 	install_keyword("vrrp_rx_bufs_policy", &vrrp_rx_bufs_policy_handler);
 	install_keyword("vrrp_rx_bufs_multiplier", &vrrp_rx_bufs_multiplier_handler);
 	install_keyword("vrrp_startup_delay", &vrrp_startup_delay_handler);
+	install_keyword("log_unknown_vrids", &vrrp_log_unknown_vrids_handler);
 #endif
 	install_keyword("umask", &umask_handler);
 	install_keyword("random_seed", &random_seed_handler);

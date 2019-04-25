@@ -221,9 +221,12 @@ fifo_open(notify_fifo_t* fifo, int (*script_exit)(thread_t *), const char *type)
 	if (fifo->name) {
 		sav_errno = 0;
 
-		if (!(ret = mkfifo(fifo->name, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)))
+		if (!(ret = mkfifo(fifo->name, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH))) {
 			fifo->created_fifo = true;
-		else {
+
+			if (chown(fifo->name, fifo->uid, fifo->gid))
+				log_message(LOG_INFO, "Failed to set uid:gid for fifo %s", fifo->name);
+		} else {
 			sav_errno = errno;
 
 			if (sav_errno != EEXIST)
@@ -1172,7 +1175,7 @@ notify_resource_release(void)
 }
 
 bool __attribute__ ((pure))
-notify_script_compare(notify_script_t *a, notify_script_t *b)
+notify_script_compare(const notify_script_t *a, const notify_script_t *b)
 {
 	int i;
 

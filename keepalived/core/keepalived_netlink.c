@@ -40,6 +40,7 @@
 #endif
 #include <linux/ip.h>
 #include <unistd.h>
+#include <linux/if_link.h>
 
 #ifdef THREAD_DUMP
 #include "scheduler.h"
@@ -1016,11 +1017,7 @@ netlink_if_address_filter(__attribute__((unused)) struct sockaddr_nl *snl, struc
 // We still need to consider non-vmac IPv6 if interface doesn't have a
 // link local address.
 		if (h->nlmsg_type == RTM_NEWADDR) {
-			if (
-#ifdef _HAVE_VRRP_VMAC_
-			    !ifp->vmac_type &&
-#endif
-			    !ignore_address_if_ours_or_link_local(ifa, addr.addr, ifp)) {
+			if (!ignore_address_if_ours_or_link_local(ifa, addr.addr, ifp)) {
 				/* If no address is set on interface then set the first time */
 // TODO if saddr from config && track saddr, addresses must match
 				if (ifa->ifa_family == AF_INET) {
@@ -1811,10 +1808,17 @@ netlink_if_link_populate(interface_t *ifp, struct rtattr *tb[], struct ifinfomsg
 				if (linkattr[IFLA_MACVLAN_MODE] &&
 				    tb[IFLA_LINK]) {
 					ifp->vmac_type = *(uint32_t*)RTA_DATA(linkattr[IFLA_MACVLAN_MODE]);
-					ifp->base_ifindex = *(uint32_t *)RTA_DATA(tb[IFLA_LINK]);
-					ifp->base_ifp = if_get_by_ifindex(ifp->base_ifindex);
-					if (ifp->base_ifp)
-						ifp->base_ifindex = 0;	/* Make sure this isn't used at runtime */
+#ifdef HAVE_IFLA_LINK_NETNSID						/* from Linux v4.0 */
+					if (!tb[IFLA_LINK_NETNSID])	/* Only use link details if in same network namespace */
+#endif
+					{
+						ifp->base_ifindex = *(uint32_t *)RTA_DATA(tb[IFLA_LINK]);
+						ifp->base_ifp = if_get_by_ifindex(ifp->base_ifindex);
+						if (ifp->base_ifp)
+							ifp->base_ifindex = 0;	/* Make sure this isn't used at runtime */
+						else
+							ifp->base_ifp = ifp;
+					}
 				}
 			}
 #ifdef _HAVE_VRF_
@@ -1967,6 +1971,7 @@ netlink_link_filter(__attribute__((unused)) struct sockaddr_nl *snl, struct nlms
 	size_t hw_addr_len;
 	char mac_buf[3 * sizeof(ifp->hw_addr)];
 	char old_mac_buf[3 * sizeof(ifp->hw_addr)];
+	list old_tracking_vrrp;
 
 	if (!(h->nlmsg_type == RTM_NEWLINK || h->nlmsg_type == RTM_DELLINK))
 		return 0;
@@ -2140,8 +2145,16 @@ netlink_link_filter(__attribute__((unused)) struct sockaddr_nl *snl, struct nlms
 			list sav_tracking_vrrp = ifp->tracking_vrrp;
 
 			old_mtu = ifp->mtu;
+			free_list(&ifp->sin_addr_l);
+			free_list(&ifp->sin6_addr_l);
+			old_tracking_vrrp = ifp->tracking_vrrp;
 
 			memset(ifp, 0, sizeof(interface_t));
+
+			/* Re-establish lists */
+			ifp->sin_addr_l = alloc_list(free_list_element_simple, NULL);
+			ifp->sin6_addr_l = alloc_list(free_list_element_simple, NULL);
+			ifp->tracking_vrrp = old_tracking_vrrp;
 
 			ifp->garp_delay = sav_garp_delay;
 			ifp->tracking_vrrp = sav_tracking_vrrp;

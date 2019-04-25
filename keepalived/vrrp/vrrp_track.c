@@ -44,6 +44,7 @@
 #include "scheduler.h"
 #include "parser.h"
 #include "utils.h"
+#include "vrrp_notify.h"
 
 static int inotify_fd = -1;
 static thread_t *inotify_thread;
@@ -751,6 +752,9 @@ vrrp_set_effective_priority(vrrp_t *vrrp)
 			vrrp->sands = timer_sub_long(vrrp->sands, old_down_timer - vrrp->ms_down_timer);
 		vrrp_thread_requeue_read(vrrp);
 	}
+
+	if (vrrp->notify_priority_changes)
+		send_instance_priority_notifies(vrrp);
 }
 
 static void
@@ -930,15 +934,19 @@ initialise_process_tracking_priorities(void)
 	element e, e1;
 
 	LIST_FOREACH(vrrp_data->vrrp_track_processes, tprocess, e) {
+		tprocess->have_quorum =
+			(tprocess->num_cur_proc >= tprocess->quorum &&
+			 tprocess->num_cur_proc <= tprocess->quorum_max);
+
 		LIST_FOREACH(tprocess->tracking_vrrp, tvp, e1) {
 			if (!tvp->weight) {
-				if (tprocess->num_cur_proc < tprocess->quorum) {
+				if (!tprocess->have_quorum) {
 					/* The instance is down */
 					tvp->vrrp->state = VRRP_STATE_FAULT;
 					tvp->vrrp->num_script_if_fault++;
 				}
 			}
-			else if (tprocess->num_cur_proc >= tprocess->quorum) {
+			else if (tprocess->have_quorum) {
 				if (tvp->weight > 0)
 					tvp->vrrp->total_priority += tvp->weight;
 			}

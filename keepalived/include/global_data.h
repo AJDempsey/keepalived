@@ -86,6 +86,16 @@ typedef enum {
 
 /* Configuration data root */
 typedef struct _data {
+	char 				*process_name;
+#ifdef _WITH_VRRP_
+	char				*vrrp_process_name;
+#endif
+#ifdef _WITH_LVS_
+	char				*lvs_process_name;
+#endif
+#ifdef _WITH_BFD_
+	char				*bfd_process_name;
+#endif
 #if HAVE_DECL_CLONE_NEWNET
 	char				*network_namespace;	/* network namespace name */
 	bool				namespace_with_ipsets;	/* override for namespaces with ipsets on Linux < 3.13 */
@@ -194,6 +204,9 @@ typedef struct _data {
 #ifdef _WITH_LVS_
 	notify_fifo_t			lvs_notify_fifo;
 #endif
+#ifdef _WITH_VRRP_
+	int				vrrp_notify_priority_changes;
+#endif
 #ifdef _WITH_SNMP_
 	bool				enable_traps;
 	char				*snmp_socket;
@@ -241,6 +254,7 @@ typedef struct _data {
 	size_t				vrrp_rx_bufs_size;
 	int				vrrp_rx_bufs_multiples;
 	unsigned			vrrp_startup_delay;
+	bool				log_unknown_vrids;
 #endif
 } data_t;
 

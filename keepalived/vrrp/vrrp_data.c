@@ -269,19 +269,45 @@ free_vprocess(void *data)
 	free_list(&vprocess->tracking_vrrp);
 	FREE(vprocess->pname);
 	FREE(vprocess->process_path);
+	FREE_PTR(vprocess->process_params);
 	FREE(vprocess);
 }
 static void
 dump_vprocess(FILE *fp, void *data)
 {
 	vrrp_tracked_process_t *vprocess = data;
+	char *params;
+	char *p;
 
 	conf_write(fp, " VRRP Track process = %s", vprocess->pname);
 	conf_write(fp, "   Process = %s", vprocess->process_path);
+	if (vprocess->process_params) {
+		params = MALLOC(vprocess->process_params_len);
+		memcpy(params, vprocess->process_params, vprocess->process_params_len);
+		p = params;
+		for (p = strchr(params, '\0'); p < params + vprocess->process_params_len - 1; p = strchr(params + 1, '\0'))
+			*p = ' ';
+		conf_write(fp, "   Parameters = %s", params);
+		FREE(params);
+	}
+	if (vprocess->param_match != PARAM_MATCH_NONE)
+		conf_write(fp, "   Param match%s",
+			       vprocess->param_match == PARAM_MATCH_EXACT ? "" :
+			       vprocess->param_match == PARAM_MATCH_PARTIAL ? " = partial" :
+			       vprocess->param_match == PARAM_MATCH_INITIAL ? " = initial" :
+			       "unknown");
 	conf_write(fp, "   Min processes = %d", vprocess->quorum);
+	if (vprocess->quorum_max < UINT_MAX)
+		conf_write(fp, "   Max processes = %d", vprocess->quorum_max);
 	conf_write(fp, "   Current processes = %d", vprocess->num_cur_proc);
+	conf_write(fp, "   Have quorum = %s", vprocess->have_quorum ? "true" : "false");
 	conf_write(fp, "   Weight = %d", vprocess->weight);
-	conf_write(fp, "   Delay = %fs", (double)vprocess->delay / TIMER_HZ);
+	conf_write(fp, "   Terminate delay = %fs", (double)vprocess->terminate_delay / TIMER_HZ);
+	conf_write(fp, "   Fork delay = %fs", (double)vprocess->fork_delay / TIMER_HZ);
+	if (fp) {
+		conf_write(fp, "   Fork delay timer %srunning", vprocess->fork_timer_thread ? "" : "not ");
+		conf_write(fp, "   Terminate delay timer %srunning", vprocess->terminate_timer_thread ? "" : "not ");
+	}
 	conf_write(fp, "   Full command = %s", vprocess->full_command ? "true" : "false");
 	conf_write(fp, "   Tracking VRRP instances = %d", vprocess->tracking_vrrp ? LIST_SIZE(vprocess->tracking_vrrp) : 0);
 	if (vprocess->tracking_vrrp)
@@ -463,7 +489,8 @@ dump_vrrp(FILE *fp, void *data)
 				__test_bit(VRRP_VMAC_XMITBASE_BIT, &vrrp->vmac_flags) ? "true" : "false");
 	if (vrrp->ifp->is_ours) {
 		conf_write(fp, "   Interface = %s, vmac on %s, xmit %s i/f", IF_NAME(vrrp->ifp),
-				vrrp->ifp->base_ifp->ifname, __test_bit(VRRP_VMAC_XMITBASE_BIT, &vrrp->vmac_flags) ? "base" : "vmac");
+				vrrp->ifp != vrrp->ifp->base_ifp ? vrrp->ifp->base_ifp->ifname : "(unknown)",
+				__test_bit(VRRP_VMAC_XMITBASE_BIT, &vrrp->vmac_flags) ? "base" : "vmac");
 	} else
 #endif
 		conf_write(fp, "   Interface = %s", IF_NAME(vrrp->ifp));
@@ -607,6 +634,7 @@ dump_vrrp(FILE *fp, void *data)
 		dump_notify_script(fp, vrrp->script, "Generic");
 	if (vrrp->script_master_rx_lower_pri)
 		dump_notify_script(fp, vrrp->script_master_rx_lower_pri, "Master rx lower pri");
+	conf_write(fp, "   Notify priority changes = %s", vrrp->notify_priority_changes ? "true" : "false");
 }
 
 void
@@ -707,6 +735,7 @@ alloc_vrrp(char *iname)
 	new->unicast_chksum_compat = CHKSUM_COMPATIBILITY_NONE;
 #endif
 	new->smtp_alert = -1;
+	new->notify_priority_changes = -1;
 
 	new->skip_check_adv_addr = global_data->vrrp_skip_check_adv_addr;
 	new->strict_mode = PARAMETER_UNSET;
@@ -959,6 +988,7 @@ alloc_vrrp_process(char *pname)
 	new->pname = (char *) MALLOC(size + 1);
 	memcpy(new->pname, pname, size + 1);
 	new->quorum = 1;
+	new->quorum_max = UINT_MAX;
 	list_add(vrrp_data->vrrp_track_processes, new);
 }
 #endif

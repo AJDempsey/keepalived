@@ -94,7 +94,7 @@ m4_ifndef([AS_VAR_COPY],
 
 dnl ----[ Process this file with autoconf to produce a configure script ]----
 AC_PREREQ([2.63])
-AC_INIT([Keepalived], [2.0.14], [keepalived-devel@lists.sourceforge.net], [], [http://www.keepalived.org/])
+AC_INIT([Keepalived], [2.0.15], [keepalived-devel@lists.sourceforge.net], [], [http://www.keepalived.org/])
 AM_INIT_AUTOMAKE([-Wall -Werror -Woverride foreign])
 
 AC_CONFIG_SRCDIR([keepalived/core/main.c])
@@ -778,7 +778,7 @@ AC_LINK_IFELSE([AC_LANG_SOURCE([[
   ]])],
   AC_MSG_RESULT([no]),
   AC_MSG_RESULT([yes])
-    add_to_var([KA_LDFLAGS], [-lm])
+    add_to_var([KA_LIBS], [-lm])
   )
 CFLAGS=$SAV_CFLAGS
 LDFLAGS=$SAV_LDFLAGS
@@ -1777,6 +1777,16 @@ if test "$enable_vrrp" != no; then
   fi
   CPPFLAGS="$SAV_CPPFLAGS"
 
+  dnl ----[ Check for IFLA_LINK_NETNSID support ]---- since Linux v4.0
+  AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
+    #include <linux/if_link.h>
+    int main(void) { int var = IFLA_LINK_NETNSID; }
+    ]])],
+    [
+      AC_DEFINE([HAVE_IFLA_LINK_NETNSID], [ 1 ], [Define to 1 if IFLA_LINK_NETNSID supported])
+      add_system_opt([IFLA_LINK_NETNSID])
+    ])
+
   dnl ----[ JSON output or not ? ]----
   if test "${enable_json}" = yes; then
     ENABLE_JSON=Yes
@@ -2087,6 +2097,8 @@ AM_CONDITIONAL([SNMP_RFC], [test $SNMP_RFCV2_SUPPORT = Yes -o $SNMP_RFCV3_SUPPOR
 AM_CONDITIONAL([SNMP_RFCV2], [test $SNMP_RFCV2_SUPPORT = Yes])
 AM_CONDITIONAL([SNMP_RFCV3], [test $SNMP_RFCV3_SUPPORT = Yes])
 AM_CONDITIONAL([SNMP_REPLY_V3_FOR_V2], [test $SNMP_V3_FOR_V2 = Yes])
+AS_IF([test $SNMP_SUPPORT = Yes], [SNMP_SERVICE=snmpd.service], [SNMP_SERVICE=])
+AC_SUBST([SNMP_SERVICE])
 
 dnl ----[ Check for Dbus support ]----
 DBUS_SUPPORT=No

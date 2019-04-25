@@ -33,6 +33,7 @@
 #include <sys/stat.h>
 #include <stdint.h>
 #include <errno.h>
+#include <sys/prctl.h>
 #ifdef _WITH_PERF_
 #include <stdio.h>
 #include <sys/types.h>
@@ -70,7 +71,7 @@ mode_t umask_val = S_IXUSR | S_IRWXG | S_IRWXO;
 
 /* Display a buffer into a HEXA formated output */
 void
-dump_buffer(char *buff, size_t count, FILE* fp, int indent)
+dump_buffer(const char *buff, size_t count, FILE* fp, int indent)
 {
 	size_t i, j, c;
 	bool printnext = true;
@@ -188,6 +189,16 @@ make_file_name(const char *name, const char *prog, const char *namespace, const 
 		strcat(file_name, extn_start);
 
 	return file_name;
+}
+
+void
+set_process_name(const char *name)
+{
+	if (!name)
+		name = "keepalived";
+
+	if (prctl(PR_SET_NAME, name))
+		log_message(LOG_INFO, "Failed to set process name '%s'", name);
 }
 
 #ifdef _WITH_PERF_
@@ -523,7 +534,7 @@ inet_stosockaddr(char *ip, const char *port, struct sockaddr_storage *addr)
 
 /* IPv4 to sockaddr_storage */
 void
-inet_ip4tosockaddr(struct in_addr *sin_addr, struct sockaddr_storage *addr)
+inet_ip4tosockaddr(const struct in_addr *sin_addr, struct sockaddr_storage *addr)
 {
 	struct sockaddr_in *addr4 = (struct sockaddr_in *) addr;
 	addr4->sin_family = AF_INET;
@@ -532,7 +543,7 @@ inet_ip4tosockaddr(struct in_addr *sin_addr, struct sockaddr_storage *addr)
 
 /* IPv6 to sockaddr_storage */
 void
-inet_ip6tosockaddr(struct in6_addr *sin_addr, struct sockaddr_storage *addr)
+inet_ip6tosockaddr(const struct in6_addr *sin_addr, struct sockaddr_storage *addr)
 {
 	struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *) addr;
 	addr6->sin6_family = AF_INET6;
@@ -541,15 +552,15 @@ inet_ip6tosockaddr(struct in6_addr *sin_addr, struct sockaddr_storage *addr)
 
 /* IP network to string representation */
 static char *
-inet_sockaddrtos2(struct sockaddr_storage *addr, char *addr_str)
+inet_sockaddrtos2(const struct sockaddr_storage *addr, char *addr_str)
 {
-	void *addr_ip;
+	const void *addr_ip;
 
 	if (addr->ss_family == AF_INET6) {
-		struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *) addr;
+		const struct sockaddr_in6 *addr6 = (const struct sockaddr_in6 *) addr;
 		addr_ip = &addr6->sin6_addr;
 	} else {
-		struct sockaddr_in *addr4 = (struct sockaddr_in *) addr;
+		const struct sockaddr_in *addr4 = (const struct sockaddr_in *) addr;
 		addr_ip = &addr4->sin_addr;
 	}
 
@@ -560,7 +571,7 @@ inet_sockaddrtos2(struct sockaddr_storage *addr, char *addr_str)
 }
 
 char *
-inet_sockaddrtos(struct sockaddr_storage *addr)
+inet_sockaddrtos(const struct sockaddr_storage *addr)
 {
 	static char addr_str[INET6_ADDRSTRLEN];
 	inet_sockaddrtos2(addr, addr_str);
@@ -568,16 +579,16 @@ inet_sockaddrtos(struct sockaddr_storage *addr)
 }
 
 uint16_t __attribute__ ((pure))
-inet_sockaddrport(struct sockaddr_storage *addr)
+inet_sockaddrport(const struct sockaddr_storage *addr)
 {
 	if (addr->ss_family == AF_INET6) {
-		struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *) addr;
+		const struct sockaddr_in6 *addr6 = (const struct sockaddr_in6 *) addr;
 		return addr6->sin6_port;
 	}
 
 	/* Note: this might be AF_UNSPEC if it is the sequence number of
 	 * a virtual server in a virtual server group */
-	struct sockaddr_in *addr4 = (struct sockaddr_in *) addr;
+	const struct sockaddr_in *addr4 = (const struct sockaddr_in *) addr;
 	return addr4->sin_port;
 }
 
@@ -594,7 +605,7 @@ inet_set_sockaddrport(struct sockaddr_storage *addr, uint16_t port)
 }
 
 char *
-inet_sockaddrtopair(struct sockaddr_storage *addr)
+inet_sockaddrtopair(const struct sockaddr_storage *addr)
 {
 	char addr_str[INET6_ADDRSTRLEN];
 	static char ret[sizeof(addr_str) + 8];	/* '[' + addr_str + ']' + ':' + 'nnnnn' */
@@ -607,7 +618,7 @@ inet_sockaddrtopair(struct sockaddr_storage *addr)
 }
 
 char *
-inet_sockaddrtotrio_r(struct sockaddr_storage *addr, uint16_t proto, char *buf)
+inet_sockaddrtotrio_r(const struct sockaddr_storage *addr, uint16_t proto, char *buf)
 {
 	char addr_str[INET6_ADDRSTRLEN];
 	char *proto_str = proto == IPPROTO_TCP ? "tcp" :
@@ -622,7 +633,7 @@ inet_sockaddrtotrio_r(struct sockaddr_storage *addr, uint16_t proto, char *buf)
 }
 
 const char *
-inet_sockaddrtotrio(struct sockaddr_storage *addr, uint16_t proto)
+inet_sockaddrtotrio(const struct sockaddr_storage *addr, uint16_t proto)
 {
 	static char ret[SOCKADDRTRIO_STR_LEN];
 
@@ -632,21 +643,21 @@ inet_sockaddrtotrio(struct sockaddr_storage *addr, uint16_t proto)
 }
 
 uint32_t __attribute__ ((pure))
-inet_sockaddrip4(struct sockaddr_storage *addr)
+inet_sockaddrip4(const struct sockaddr_storage *addr)
 {
 	if (addr->ss_family != AF_INET)
 		return 0xffffffff;
 
-	return ((struct sockaddr_in *) addr)->sin_addr.s_addr;
+	return ((const struct sockaddr_in *) addr)->sin_addr.s_addr;
 }
 
 int
-inet_sockaddrip6(struct sockaddr_storage *addr, struct in6_addr *ip6)
+inet_sockaddrip6(const struct sockaddr_storage *addr, struct in6_addr *ip6)
 {
 	if (addr->ss_family != AF_INET6)
 		return -1;
 
-	*ip6 = ((struct sockaddr_in6 *) addr)->sin6_addr;
+	*ip6 = ((const struct sockaddr_in6 *) addr)->sin6_addr;
 	return 0;
 }
 
@@ -705,7 +716,7 @@ inet_sockaddrcmp(const struct sockaddr_storage *a, const struct sockaddr_storage
  * Highly inspired from Paul Vixie code.
  */
 int
-inet_ston(const char *addr, uint32_t * dst)
+inet_ston(const char *addr, uint32_t *dst)
 {
 	static char digits[] = "0123456789";
 	int saw_digit, octets, ch;
@@ -768,7 +779,7 @@ inet_cidrtomask(uint8_t cidr)
 #endif
 
 void
-format_mac_buf(char *op, size_t op_len, unsigned char *addr, size_t addr_len)
+format_mac_buf(char *op, size_t op_len, const unsigned char *addr, size_t addr_len)
 {
 	size_t i;
 	char *buf_end = op + op_len;
@@ -962,7 +973,7 @@ close_std_fd(void)
 
 #if !defined _HAVE_LIBIPTC_ || defined _LIBIPTC_DYNAMIC_
 int
-fork_exec(char **argv)
+fork_exec(char * const argv[])
 {
 	pid_t pid;
 	int status;

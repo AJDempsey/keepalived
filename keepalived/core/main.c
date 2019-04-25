@@ -132,7 +132,7 @@ static bool free_bfd_pidfile;
 #endif
 unsigned long daemon_mode;				/* VRRP/CHECK/BFD subsystem selection */
 #ifdef _WITH_SNMP_
-bool snmp;						/* Enable SNMP support */
+bool snmp_option;					/* Enable SNMP support */
 const char *snmp_socket;				/* Socket to use for SNMP agent */
 #endif
 static char *syslog_ident;				/* syslog ident if not default */
@@ -511,6 +511,11 @@ static bool reload_config(void)
 	read_config_file();
 
 	init_global_data(global_data, old_global_data);
+
+	/* Update process name if necessary */
+	if (!global_data->process_name != !old_global_data->process_name ||
+	    (global_data->process_name && strcmp(global_data->process_name, old_global_data->process_name)))
+		set_process_name(global_data->process_name);
 
 #if HAVE_DECL_CLONE_NEWNET
 	if (!!old_global_data->network_namespace != !!global_data->network_namespace ||
@@ -1231,7 +1236,7 @@ usage(const char *prog)
 #ifdef _EPOLL_THREAD_DUMP_
 	fprintf(stderr, "                                   D - epoll thread dump debug\n");
 #endif
-#ifdef _VRRP_FD_DEBUG
+#ifdef _VRRP_FD_DEBUG_
 	fprintf(stderr, "                                   F - vrrp fd dump debug\n");
 #endif
 #ifdef _REGEX_DEBUG_
@@ -1512,7 +1517,7 @@ parse_cmdline(int argc, char **argv)
 #endif
 #ifdef _WITH_SNMP_
 		case 'x':
-			snmp = 1;
+			snmp_option = true;
 			break;
 		case 'A':
 			snmp_socket = optarg;
@@ -1784,6 +1789,10 @@ keepalived_main(int argc, char **argv)
 	read_config_file();
 
 	init_global_data(global_data, NULL);
+
+	/* Update process name if necessary */
+	if (global_data->process_name)
+		set_process_name(global_data->process_name);
 
 #if HAVE_DECL_CLONE_NEWNET
 	if (override_namespace) {
